@@ -6,7 +6,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "node scripts/package.js",
-    "start": "watch 'npm run build' ./src"
+    "start": "watch --interval=1 --wait=0.5 'npm run build' ./src"
   },
   "author": "",
   "license": "ISC",
