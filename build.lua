@@ -897,7 +897,7 @@ local testScript =[[
 50 - pan +30 +0
 100 - slowpan roy,dot
 
-a roy say Hey there Dot.
+a roy say What's up, Dot.
 a roy wave
 a+40 dot wave
 a+60 dot say Oh hi, Roy.
@@ -996,6 +996,7 @@ local s1 =
 	testScript,
 	{x=15, y=-3}
 )
+
 
 G.scene=s1
 
