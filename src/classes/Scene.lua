@@ -165,7 +165,7 @@ function Scene(name,
 			else
 				y = tonumber(p[2])
 			end
-		elseif #p == 1 or #p == 3 then
+		elseif #p == 1 or #p == 3 then 
 			-- use other NPC's loc
 			local npc2 = s.getNpcOrNpcs(p[1])
 			local npc2Loc = s.getNpcCoords(npc2)
@@ -185,11 +185,17 @@ function Scene(name,
 		if #tagParams == 2 then
 			return {x = tonumber(tagParams[1]), y = tonumber(tagParams[2])}
 		elseif #tagParams > 2 then
-			-- relative to other tag params
 			local otherTagParams = s.getTaggedParams(tagParams[1])
-			return s.getCoordsFromLocation(
-				{tagParams[2], tagParams[3]},
-				s.getCoordsFromTag(otherTagParams))
+			
+			if otherTagParams then
+				-- relative to other tag params
+				return s.getCoordsFromLocation(
+					{tagParams[2], tagParams[3]},
+					s.getCoordsFromTag(otherTagParams))
+			else
+				-- other location type
+				return s.getCoordsFromLocation(tagParams)
+			end
 		else
 			trace('Error: 0 or 1 params for location tag!')
 		end

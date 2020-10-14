@@ -104,10 +104,13 @@ f+80 cat say THE END
 
 local testScript1 = [[
 - start tag 0
-- action tag start+60
-- action2 tag action+100
-- action3 tag action2+100
-- action4 tag action3+200
+- action tag start+30
+- action2 tag action+60
+- action3 tag action2+60
+- action4 tag action3+60
+
+- catPlace place cat -10 +0
+- catPlaceButUp place catPlace +0 -30
 
 - spotA place 30 30
 - spotA2 place spotA +30 +0
@@ -125,14 +128,14 @@ action roy walk spotB2
 action2 cat walk spotA3
 action2 roy walk spotB3
 
-action3 cat walk spotA3 +10 +10
+action3 cat walk spotA3 +10 +10 
 action3 roy walk spotB3 -40 +30
 
 action4 cat walk spotA3 -10 -10
 action4 roy walk spotB3 +40 -30
 
-action4+200 cat walk spotA3
-action4+200 roy walk spotB3
+action4+30 cat run +40 +10
+action4+200 roy walk catPlaceButUp
 ]]
 
 local npcs={
