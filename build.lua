@@ -4,7 +4,1021 @@
 -- script: lua
 
 
-trace("THIS SHOULDNT BE HERE")
+local C = {
+	--config
+	DEF_ANIM_TICS = 5,
+	BG_COL = 5,
+	CLEAR_COL = 14,
+	NPC_WALK_SPD = 0.5,
+	NPC_RUN_SPD = 1.3,
+	NPC_START_X = -30,
+	NPC_START_Y = 0,
+	STAGE_MOVE_SPD_SLOW = 0.3,
+	STAGE_MOVE_SPD_MED = 1.5,
+	STAGE_MOVE_SPD_FAST = 4,
+	JUMP_SCALE = 0.3,
+	TEXT_TOP = 8,
+	T_LINE_MIN = 40,
+	T_PER_LETTER = 3,
+	CHAR_WIDTH = 6,
+}
+
+local G = {
+	--global state
+	t = 0,
+	debug = "",
+	--cur scene
+	scene = nil
+}
+
+
+function makeNpc(i, speechClr)
+	
+	i = i + 256
+	local n =
+		Npc(
+		{
+			idle = Anim({i}, 30, true),
+			walk = Anim({2 + i, 1 + i}, 5, true),
+			jump = Anim(
+				{
+					5 + i,
+					4 + i,
+					4 + i,
+					3 + i,
+					3 + i,
+					5 + i
+				},
+				5
+			),
+			run = Anim({2 + i, 3 + i, 2 + i, 1 + i}, 3, true),
+			wave = Anim({6 + i,7 + i, 6 + i, 7 + i, 6 + i, 7 + i}, 10),
+			gesture = Anim({8 + i}, 100),
+			point = Anim({9 + i}, 100),
+		},
+		{x = 1, y = 2},
+		{x = C.NPC_START_X, y = C.NPC_START_Y}
+	)
+	if speechClr then
+		n.speechClr = speechClr
+	end
+	return n
+end
+
+
+function clamp(val, min, max)
+	if val < min then
+		return min
+	elseif val > max then
+		return max
+	else
+		return val
+	end
+end
+
+function isArray(table)
+	if table[1] then
+		return true
+	else return false end
+end
+
+function asList(table)
+	local all = {}
+	for k, item in pairs(table) do
+		all[#all + 1] = item
+	end
+	return all
+end
+
+function invokeBackToFront(
+	objects, --objects with locations
+	methodNm) -- method name
+	function sortByY(a, b)
+		return b.loc.y > a.loc.y
+	end
+	table.sort(objects, sortByY)
+
+	for i = 1, #objects do
+		local f = objects[i][methodNm]
+		if f then
+			f()
+		end
+	end
+end
+
+function getCenteredTextX(str)
+	local w = string.len(str) * C.CHAR_WIDTH
+	return 120 - w / 2
+end
+
+local function split(str, sep)
+	local result = {}
+	local regex = ("([^%s]+)"):format(sep)
+	for each in str:gmatch(regex) do
+		table.insert(result, each)
+	end
+	return result
+end
+
+
+-- auto-restarting animation class ---
+function Anim(
+	sprites, --spr indices
+	tics, --tics per frame
+	loop)
+	local s = {
+		idx = 1,
+		sprites = sprites,
+		tics = tics or C.DEF_ANIM_TICS,
+		prevFrame = 0,
+		prevUsed = 0,
+		done = false,
+		loop = loop or false,
+		parent = nil,
+	}
+
+	function s.getTime()
+		if s.parent then
+			return s.parent.getTime()
+		else
+			return G.t
+		end
+	end
+
+	function s.reset()
+		s.idx = 1
+		s.prevFrame = 0
+		s.prevUsed = 0
+		s.done = false
+	end
+
+	function s.restart()
+		s.done = false
+		s.idx = 1
+	end
+
+	function s.atEnd()
+		return s.idx == #s.sprites
+	end
+
+	function s.goNext()
+		if not s.loop and s.atEnd() then
+			s.done = true
+			return
+		end
+
+		s.idx = s.idx + 1
+		--reset to start
+		if s.idx > #s.sprites then
+			s.restart()
+		end
+	end
+	-- update anim state on each tic
+	function s.update()
+		local sinceF = s.getTime() - s.prevFrame
+		local sinceU = s.getTime() - s.prevUsed
+		-- restart animation after a break
+		if sinceU > 1 then
+			s.restart()
+			s.prevFrame = s.getTime()
+		elseif sinceF > s.tics then
+			s.goNext()
+			s.prevFrame = s.getTime()
+		end
+		s.prevUsed = s.getTime()
+	end
+
+	function s.get()
+		s.prevUsed = s.getTime()
+		return s.sprites[s.idx]
+	end
+
+	return s
+end
+
+--------- Command "class" ----
+function Command(cmdStr)
+	local parts = split(cmdStr, " ")
+
+	local s = {
+		tic = parts[1],
+		name = parts[2],
+		cmd = parts[3],
+		params = {}
+	}
+	for i = 4, #parts do
+		s.params[#s.params + 1] = parts[i]
+	end
+
+	return s
+end
+
+--------- Lines (speech) class ---
+function Lines(parent)
+	local s = {
+		lines = {0,0,0,0,0,0,0,0},
+		parent = parent
+	}
+
+	function s.getTime ()
+		if s.parent then
+			return s.parent.getTime()
+		else
+			return G.t
+		end
+	end
+
+	function s.clearNpcLine(npc)
+		for i = 1, #s.lines do
+			if s.lines[i] ~= 0 and s.lines[i].npc == npc then
+				s.lines[i] = 0
+				return
+			end
+		end
+	end
+
+	function s.add(npc, str)
+		s.clearNpcLine(npc)
+		if str == '' or str == nil then
+			return
+		end
+
+		for i = 1, #s.lines do
+			if s.lines[i] == 0 then
+				s.lines[i] = {npc=npc,str=str,start=s.getTime()}
+				return
+			end
+		end
+		error("too many lines!")
+	end
+
+	function s.isLineActive(line)
+		if line == 0 then
+			return false
+		end
+		local elapsed = s.getTime() - line.start
+		local speakTime = C.T_LINE_MIN + C.T_PER_LETTER * string.len(line.str)
+		return elapsed < speakTime
+	end
+
+	function s.drawLine(idx)
+		if s.lines[idx] == 0 then return end
+
+		local str = s.lines[idx].str
+		local loc = s.lines[idx].npc.getCoords()
+		local clr = s.lines[idx].npc.speechClr
+
+		local w = string.len(str) * C.CHAR_WIDTH
+
+		local x = getCenteredTextX(str) / 2 + loc.x / 2
+
+		local y = C.TEXT_TOP + idx * 8
+		local centerTxt = x + w / 2
+		local centerSpr = loc.x + 8
+		print(str, x, y, clr)
+		local dx = centerTxt - centerSpr
+		local yFrom = loc.y - 10
+		local yTo = y + 10
+		if yFrom > yTo then
+			line(centerSpr + .2 * dx, yFrom, centerTxt - 0.3 * dx, yTo, clr)
+		end
+	end
+
+	function s.reset()
+		s.lines = {0,0,0,0,0,0,0,0}
+	end
+
+	function s.update()
+		for i = 1, #s.lines do
+			local line = s.lines[i]
+			if line ~= 0 and not s.isLineActive(line) then
+				-- clear line
+				s.lines[i] = 0
+			end
+		end
+	end
+
+	function s.draw()
+		for i = 1, #s.lines do
+			if s.isLineActive(s.lines[i]) then
+				s.drawLine(i)
+			end
+		end
+	end
+
+	return s
+end
+
+
+--location class: for npc locations or scene locations
+function Loc()
+	local s = {
+		x = C.NPC_START_X,
+		y = C.NPC_START_Y,
+		dest = nil,
+		spd = C.NPC_WALK_SPD,
+		dir = "right"
+	}
+
+	function s.setDest(x, y)
+		if x < s.x then
+			s.dir = "left"
+		else
+			s.dir = "right"
+		end
+		s.dest = {x = x, y = y}
+	end
+
+	--move towards destination
+	function s.update()
+		if not s.dest then
+			return
+		end
+
+		local dx = s.dest.x - s.x
+		local dy = s.dest.y - s.y
+		local dist = math.sqrt(dx * dx + dy * dy)
+
+		if dist < s.spd then
+			s.x = s.dest.x
+			s.y = s.dest.y
+			s.dest = nil
+			return
+		end
+		local incr = s.spd / dist
+		s.x = s.x + dx * incr
+		s.y = s.y + dy * incr
+	end
+
+	return s
+end
+
+
+--npc class----
+function Npc(
+	anims, --animation table
+	size, --x/y sprite size
+	loc) --starting loc
+	local s = {
+		loc = Loc(),
+		size = size,
+		anim = nil,
+		anims = anims,
+		jumpVel = 0,
+		jumpHgt = 0,
+		running = false,
+		speechClr = 4,
+		parent = nil,
+	}
+	-- set parent on anims
+	for k, anim in pairs(s.anims) do
+		anim.parent = s
+	end
+
+	function s.getTime()
+		if s.parent then
+			return s.parent.getTime()
+		else 
+			return G.t
+		end
+	end
+
+	function s.reset()
+		s.loc = Loc()
+		s.anim = nil
+		s.jumpVel = 0
+		s.jumpHgt = 0
+		s.running = false
+		for k, anim in pairs(s.anims) do
+			anim.reset()
+		end
+	end
+
+	function s.getAnim()
+		return s.anims[s.anim]
+	end
+
+	function s.setAnim(name)
+		if s.anims[name] then
+			s.anim = name
+		else
+			s.anim = nil
+		end
+	end
+
+	function s.isMoving()
+		return s.loc.dest ~= nil
+	end
+
+	function s.run()
+		if not s.running then
+			s.running = true
+		end
+		s.loc.spd = C.NPC_RUN_SPD
+	end
+
+	function s.walk()
+		if s.running then
+			s.running = false
+		end
+		s.loc.spd = C.NPC_WALK_SPD
+	end
+
+	function s.wave()
+		s.loc.dest = nil
+		s.setAnim('wave')
+	end
+
+	function s.gesture()
+		s.loc.dest = nil
+		s.setAnim('gesture')
+	end
+
+	function s.point()
+		s.loc.dest = nil
+		s.setAnim('point')
+	end
+
+	function s.idle()
+		s.loc.dest = nil
+		s.setAnim('idle')
+	end
+
+	function s.isJumping()
+		return s.jumpHgt > 0 or s.jumpVel > 0
+	end
+
+	function s.startJump()
+		if s.isJumping() then
+			return
+		end
+		s.jumpVel = 7
+	end
+
+	function s.updateJump()
+		if s.isJumping() then
+			s.jumpVel = s.jumpVel - 0.4
+			s.jumpHgt = s.jumpHgt + s.jumpVel
+			if s.jumpHgt < 0 then
+				s.jumpHgt = 0
+			end
+		end
+	end
+
+	function s.pickAnim()
+		if s.isJumping() then
+			return s.setAnim("jump")
+		end
+		if s.isMoving() then
+			if s.running then
+				s.setAnim("run")
+			else
+				s.setAnim("walk")
+			end
+		elseif (s.anim == "walk" or s.anim == "run") and not s.isMoving() then
+			s.setAnim("idle")
+		end
+		if s.anim == nil then
+			s.anim = "idle"
+		end
+	end
+
+	function s.update()
+		--update location
+		s.loc.update()
+		--update jump state
+		s.updateJump()
+		--update which anim to use
+		s.pickAnim()
+		--update animation
+		anim = s.getAnim()
+		if anim then
+			anim.update()
+			if anim.done then
+				s.setAnim("idle")
+			end
+		end
+	end
+
+	function s.getCoords()
+		if s.parent and s.parent.loc then
+			return {
+				x = s.loc.x - s.parent.loc.x, 
+				y = s.loc.y - s.parent.loc.y,
+			}
+		else
+			return {x = s.loc.x, y = s.loc.y}
+		end
+	end
+	function s.draw()
+		local anim = s.getAnim()
+		if anim then
+			local flip = 0
+			if s.loc.dir == "left" then
+				flip = 1
+			end
+			local coords = s.getCoords()
+			spr(anim.get(), 
+				coords.x, 
+				coords.y - C.JUMP_SCALE * s.jumpHgt,
+				C.CLEAR_COL, 2, flip, 0, s.size.x, s.size.y)
+		end
+	end
+
+	return s
+end
+
+
+--------- Scene class ----
+function Scene(name,
+	npcs, -- object of npcs name:npc
+	script, -- commands script
+	mapOffset -- {x,y} of map tile offset
+	)
+	local s = {
+		t = 0,
+		name = name,
+		npcs = npcs,
+		tics = {},
+		tags = {},
+		lines = nil,
+		loc = Loc(),
+		map = nil,
+	}
+
+	s.lines = Lines(s)
+	s.map = Map(s, mapOffset)
+
+	s.loc.x = 0
+	s.loc.y = 0
+	s.loc.spd = C.STAGE_MOVE_SPD_MED
+
+	for k, npc in pairs(s.npcs) do
+		npc.parent = s
+	end	
+
+	function s.getTime() return s.t end
+
+	function s.reset()
+		s.lines.reset()
+		for k, npc in pairs(s.npcs) do
+			npc.reset()
+		end
+		s.loc.x = 0
+		s.loc.y = 0
+		s.loc.spd = C.STAGE_MOVE_SPD_MED
+		s.loc.dest = nil
+		s.t=0
+	end
+
+	function s.parseTic(t)
+		if not tonumber(t) then
+			if string.find(t, "+") then
+				--relative to after tag
+				local pts = split(t, "+")
+				return tostring(tonumber(s.tags[pts[1]]) + tonumber(pts[2]))
+			elseif string.find(t, "-") then
+				--relative to before tag
+				local pts = split(t, "-")
+				return tostring(tonumber(s.tags[pts[1]]) - tonumber(pts[2]))
+			else
+				--just tag
+				return s.tags[t]
+			end
+		else
+			return t
+		end
+	end
+	function s.placeCmdInTics(cmd)
+		local t = s.parseTic(cmd.tic)
+		if s.tics[t] then
+			s.tics[t][#s.tics[t] + 1] = cmd
+		else
+			s.tics[t] = {cmd}
+		end
+	end
+
+	function s.initScript()
+		for cmdLine in script:gmatch("[^\n]+") do
+			--build up lib of tic cmds
+			local cmd = Command(cmdLine)
+			if cmd.cmd == "tag" then
+				--do definition
+				s.handleTagCommand(cmd)
+			else
+				s.placeCmdInTics(cmd)
+			end
+		end
+	end
+
+	function s.handleTagCommand(cmd)
+		--set time tag
+		local t = cmd.params[1]
+		s.tags[cmd.name] = s.parseTic(t)
+	end
+
+	function s.getNpcOrNpcs(name)
+		if string.find(name, ',') then
+			local npcs = {}
+			local names = split(name, ',')
+			for i=1, #names do
+				npcs[#npcs+1] = s.getNpcOrNpcs(names[i])
+			end
+			return npcs
+		else
+			local npc = s.npcs[name]
+			if not npc then
+				error("missing NPC " .. name)
+			end
+			return npc
+		end
+	end
+
+	function s.getNpcCoords(npcOrNpcs)
+		if npcOrNpcs[1] == nil then
+			return {x = npcOrNpcs.loc.x, y = npcOrNpcs.loc.y}
+		else
+			local totalX = 0
+			local totalY = 0
+			for i=1, #npcOrNpcs do
+				totalX = totalX + npcOrNpcs[i].loc.x
+				totalY = totalY + npcOrNpcs[i].loc.y
+			end
+			return {
+				x = totalX / #npcOrNpcs,
+				y = totalY / #npcOrNpcs
+			}
+		end
+	end
+
+	function s.isRelativeCoord(param)
+		if param == nil then return false end
+		if string.find(param, "+") or string.find(param, "-") then
+			return true
+		end
+		return false
+	end
+
+	function s.getMoveXY(params, loc)
+		local p = params
+		local x = 0
+		local y = 0
+		if loc then 
+			x = loc.x
+			y = loc.y
+		end
+		if #p == 2 then
+			-- use x/y params
+			if s.isRelativeCoord(p[1]) then
+				x = x + tonumber(p[1])
+			else
+				x = tonumber(p[1])
+			end
+			if s.isRelativeCoord(p[2]) then
+				y = y + tonumber(p[2])
+			else
+				y = tonumber(p[2])
+			end
+		elseif #p == 1 or #p == 3 then
+			-- use other NPC's loc
+			local npc2 = s.getNpcOrNpcs(p[1])
+			local npc2Loc = s.getNpcCoords(npc2)
+			if #p == 1 then
+				x = npc2Loc.x
+				y = npc2Loc.y
+			else
+				local to = s.getMoveXY({p[2], p[3]}, npc2Loc)
+				x = to.x
+				y = to.y
+			end
+		end
+		return {x = x, y = y}
+	end
+
+	function s.handleMoveCommand(npc, cmd)
+		local to = s.getMoveXY(cmd.params, npc.loc)
+
+		if cmd.cmd == "to" then
+			npc.loc.x = tonumber(to.x)
+			npc.loc.y = tonumber(to.y)
+			npc.loc.dest = nil
+		elseif cmd.cmd == "walk" then
+			npc.loc.setDest(to.x, to.y)
+			npc.walk()
+		elseif cmd.cmd == "run" then
+			npc.loc.setDest(to.x, to.y)
+			npc.run()
+		end
+	end
+
+	function s.handleFaceCommand(npc, cmd)
+		local dir = cmd.params[1]
+		if dir ~= "left" and dir ~= "right" then
+			--face towards/away from other npc
+			local npc2Loc
+			local toLeft
+			local toRight
+			if string.find(dir, "-") then
+				local npc2 = s.getNpcOrNpcs(split(dir, "-")[1])
+				npc2Loc = s.getNpcCoords(npc2)
+				toLeft = "right"
+				toRight = "left"
+			else
+				local npc2 = s.getNpcOrNpcs(dir)
+				npc2Loc = s.getNpcCoords(npc2)
+				toLeft = "left"
+				toRight = "right"
+			end
+
+			local dx = npc.loc.x - npc2Loc.x
+			if dx > 0 then
+				dir = toLeft
+			else
+				dir = toRight	
+			end
+		end
+		npc.loc.dir = dir
+	end
+
+	function s.applyCommandToNpc(cmd,npc)
+		if string.find("to walk run", cmd.cmd) then
+			s.handleMoveCommand(npc, cmd)
+		elseif cmd.cmd == "face" then
+			s.handleFaceCommand(npc, cmd)
+		elseif cmd.cmd == "wave" then
+			npc.wave()
+		elseif cmd.cmd == "say" then
+			local str = ""
+			for i = 1, #cmd.params do
+				str = str .. " " .. cmd.params[i]
+			end
+			s.lines.add(npc, str)
+		elseif cmd.cmd == "jump" then
+			npc.startJump()
+		elseif cmd.cmd == "gesture" then
+			npc.gesture()
+		elseif cmd.cmd == "point" then
+			npc.point()
+		elseif cmd.cmd == "stop" then
+			npc.idle()
+			s.lines.clearNpcLine(npc)
+		end
+
+	end
+
+	function s.handleStageCommand(cmd)
+		local to = s.getMoveXY(cmd.params, s.loc)
+		if not s.isRelativeCoord(cmd.params[1]) then
+			to.x = to.x - 110
+		end
+		if not s.isRelativeCoord(cmd.params[2]) then
+			to.y = to.y - 60
+		end
+
+		--cut to destination
+		if cmd.cmd == 'to' then
+			s.loc.x = to.x
+			s.loc.y = to.y
+			s.loc.dest = nil
+			return
+		end
+		--pan to destination
+		s.loc.setDest(to.x, to.y)
+		if cmd.cmd == 'slowpan' then
+			s.loc.spd = C.STAGE_MOVE_SPD_SLOW
+		elseif cmd.cmd == 'pan' then
+			s.loc.spd = C.STAGE_MOVE_SPD_MED
+		elseif cmd.cmd == 'fastpan' then
+			s.loc.spd = C.STAGE_MOVE_SPD_FAST
+		end
+	end
+
+	function s.handleCommand(cmd)
+		if cmd.name == '-' then
+			return s.handleStageCommand(cmd)
+		end
+
+		local npc = s.getNpcOrNpcs(cmd.name)
+		if isArray(npc) then
+			for i = 1, #npc do
+				s.applyCommandToNpc(cmd, npc[i])
+			end
+		else
+			s.applyCommandToNpc(cmd, npc)
+		end
+	end
+
+	function s.update(doDraw)
+		if doDraw == nil then doDraw = true end
+
+		local cmds = s.tics[tostring(s.t)]
+		if cmds then
+			for i = 1, #cmds do
+				local c = cmds[i]
+				s.handleCommand(c)
+				local x = "" .. s.t .. " " .. c.name .. " " .. c.cmd
+				G.debug = x
+			end
+		end
+
+		s.loc.update()
+		invokeBackToFront(asList(s.npcs), "update")
+		s.lines.update()
+
+		s.t = s.t + 1
+	end
+
+	function s.draw()
+		s.map.draw()
+		invokeBackToFront(asList(s.npcs), "draw")
+		s.lines.draw()
+	end
+
+	function s.tic()
+		s.update()
+		s.draw()
+	end
+
+	function s.seek(t)
+		if t < s.t then
+			s.reset()
+		end
+
+		while s.t < t do
+			s.update()
+		end
+	end
+
+	-- initialize and return obj
+	s.initScript()
+	return s
+end
+
+
+--------- Stage class -----
+function Map(parent, mapOffset)
+	local s = {
+		parent = parent,
+		mapXOffset = 0,
+		mapYOffset = 0,
+	}
+	if mapOffset then
+		s.mapXOffset = mapOffset.x
+		s.mapYOffset = mapOffset.y
+	end
+	function s.draw()
+		local mapXRem = s.parent.loc.x % 8
+		local mapYRem = s.parent.loc.y % 8
+		local mapX = (s.parent.loc.x - mapXRem) / 8 + s.mapXOffset
+		local mapY = (s.parent.loc.y - mapYRem) / 8 + s.mapYOffset
+
+		map(mapX, mapY, 31, 18, -mapXRem, -mapYRem)
+	end
+
+	return s
+end
+
+local testScript =[[
+- a tag 240
+- b tag a+650
+- c tag b+720
+- d tag c+420
+- e tag d+600
+- f tag e+250 
+- ef tag f-100
+
+0 roy to -10 80
+0 dot to 240 60
+0 cat to 240 80
+0 roy walk +50 80
+0 dot walk 130 80
+
+0 - to roy
+50 - pan +30 +0
+100 - slowpan roy,dot
+
+a roy say Hey there Dot.
+a roy wave
+a+40 dot wave
+a+60 dot say Oh hi, Roy.
+a+150 dot say What's new?
+a+140 roy walk +20 +0
+a+280 roy say Oh, you know.
+a+410 roy say My life is in an endless loop.
+a+510 roy face -dot
+a+510 roy stop
+a+540 roy say ...or at least it feels that way.
+
+b dot walk roy +30 +0
+b+60 roy face dot
+b+100 dot say Have you heard the good news
+b+200 dot say about our Lord and Savior Xenon?
+b+350 roy walk -10 +0
+b+350 roy face dot
+b+400 roy say ...what do you mean?
+b+520 dot say Xenon!
+b+521 dot jump
+b+600 dot say "the true light of the future"
+b+610 dot gesture
+
+c-80 cat run dot +45 -5
+c-50 cat say WAIT!
+c roy walk +50 -20
+c+150 dot face roy
+c+140 cat say Don't listen to a word!
+c+140 cat gesture
+c+220 roy walk +10 +0
+c+250 roy face dot
+c+250 dot walk +5 +0
+c+300 dot say Hey what's the big idea?
+c+300 dot gesture
+
+d - slowpan roy,dot,cat
+d roy face cat
+d+20 roy face dot
+d+40 roy face cat
+d+80 cat point
+d+100 cat say You're a cult recruiter!
+d+160 dot jump
+d+200 dot face -cat
+d+200 dot walk -120 +0
+d+220 dot say You got me!
+d+200 dot jump
+d+240 dot jump
+d+280 dot jump
+d+300 dot say I'm outta here!
+d+320 dot jump
+d+400 roy say Phew, what a relief!
+d+460 roy say Thanks, Cat
+d+530 cat say No problem, good friend.
+
+e dot run 70 70
+e roy walk 102 70
+e+20 cat walk 135 70
+e+120 cat face left
+e+120 dot walk roy -15 +0
+e+140 roy face right
+e+180 roy face left
+e+170 cat walk roy +15 +0
+e+155 roy face left
+
+ef - slowpan cat,roy,dot
+ef+150 cat,roy,dot gesture
+ef+180 cat,roy,dot gesture
+ef+210 cat,roy,dot gesture
+ef+240 cat,roy,dot gesture
+ef+270 cat,roy,dot gesture
+ef+300 cat,roy,dot gesture
+ef+330 cat,roy,dot gesture
+
+f+20 cat say THE END
+f+30 roy say the
+f+10 dot say THE 
+f+60 roy say the END
+f+50 dot say THE END
+f+80 cat say THE END
+]]
+
+local npcs={
+	bob = makeNpc(0),
+	ted = makeNpc(32,2),
+	roy = makeNpc(64, 6),
+	sam = makeNpc(96, 1),
+	dot = makeNpc(128,4),
+	dee = makeNpc(160, 10),
+	cat = makeNpc(192, 12),
+	pat = makeNpc(224, 11),
+}
+
+local s1 =
+	Scene('A Very Special Episode',
+	{roy=npcs.roy,cat=npcs.cat,dot=npcs.dot},
+	testScript,
+	{x=15, y=-3}
+)
+
+G.scene=s1
+
+function UPDATE()
+	cls(C.BG_COL)
+	if btnp(1) then
+		G.scene.seek(0)
+	elseif btnp(2) then
+		G.scene.seek(G.scene.t - 100);
+		elseif btnp(3) then
+		G.scene.seek(G.scene.t + 100);
+	end
+	if G.scene then
+		G.scene.tic()
+	end
+
+	G.t = G.t + 1
+end
+
+function TIC()
+	UPDATE()
+	print(G.scene.name, 100,1,13)
+end
 
 
 -- <TILES>

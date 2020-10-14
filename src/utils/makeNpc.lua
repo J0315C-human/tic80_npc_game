@@ -1,5 +1,6 @@
 
 function makeNpc(i, speechClr)
+	
 	i = i + 256
 	local n =
 		Npc(

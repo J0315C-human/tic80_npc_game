@@ -5,8 +5,12 @@
   "main": "scripts/package.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node scripts/package.js"
+    "build": "node scripts/package.js",
+    "start": "watch 'npm run build' ./src"
   },
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "dependencies": {
+    "watch": "^1.0.2"
+  }
 }
