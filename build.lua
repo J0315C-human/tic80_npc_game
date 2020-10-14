@@ -203,7 +203,7 @@ function Command(cmdStr)
 	local s = {
 		tic = parts[1],
 		name = parts[2],
-		cmd = parts[3],
+		verb = parts[3],
 		params = {}
 	}
 	for i = 4, #parts do
@@ -602,7 +602,7 @@ function Scene(name,
 		for cmdLine in script:gmatch("[^\n]+") do
 			--build up lib of tic cmds
 			local cmd = Command(cmdLine)
-			if cmd.cmd == "tag" then
+			if cmd.verb == "tag" then
 				--do definition
 				s.handleTagCommand(cmd)
 			else
@@ -698,14 +698,14 @@ function Scene(name,
 	function s.handleMoveCommand(npc, cmd)
 		local to = s.getMoveXY(cmd.params, npc.loc)
 
-		if cmd.cmd == "to" then
+		if cmd.verb == "to" then
 			npc.loc.x = tonumber(to.x)
 			npc.loc.y = tonumber(to.y)
 			npc.loc.dest = nil
-		elseif cmd.cmd == "walk" then
+		elseif cmd.verb == "walk" then
 			npc.loc.setDest(to.x, to.y)
 			npc.walk()
-		elseif cmd.cmd == "run" then
+		elseif cmd.verb == "run" then
 			npc.loc.setDest(to.x, to.y)
 			npc.run()
 		end
@@ -741,25 +741,25 @@ function Scene(name,
 	end
 
 	function s.applyCommandToNpc(cmd,npc)
-		if string.find("to walk run", cmd.cmd) then
+		if string.find("to walk run", cmd.verb) then
 			s.handleMoveCommand(npc, cmd)
-		elseif cmd.cmd == "face" then
+		elseif cmd.verb == "face" then
 			s.handleFaceCommand(npc, cmd)
-		elseif cmd.cmd == "wave" then
+		elseif cmd.verb == "wave" then
 			npc.wave()
-		elseif cmd.cmd == "say" then
+		elseif cmd.verb == "say" then
 			local str = ""
 			for i = 1, #cmd.params do
 				str = str .. " " .. cmd.params[i]
 			end
 			s.lines.add(npc, str)
-		elseif cmd.cmd == "jump" then
+		elseif cmd.verb == "jump" then
 			npc.startJump()
-		elseif cmd.cmd == "gesture" then
+		elseif cmd.verb == "gesture" then
 			npc.gesture()
-		elseif cmd.cmd == "point" then
+		elseif cmd.verb == "point" then
 			npc.point()
-		elseif cmd.cmd == "stop" then
+		elseif cmd.verb == "stop" then
 			npc.idle()
 			s.lines.clearNpcLine(npc)
 		end
@@ -776,7 +776,7 @@ function Scene(name,
 		end
 
 		--cut to destination
-		if cmd.cmd == 'to' then
+		if cmd.verb == 'to' then
 			s.loc.x = to.x
 			s.loc.y = to.y
 			s.loc.dest = nil
@@ -784,11 +784,11 @@ function Scene(name,
 		end
 		--pan to destination
 		s.loc.setDest(to.x, to.y)
-		if cmd.cmd == 'slowpan' then
+		if cmd.verb == 'slowpan' then
 			s.loc.spd = C.STAGE_MOVE_SPD_SLOW
-		elseif cmd.cmd == 'pan' then
+		elseif cmd.verb == 'pan' then
 			s.loc.spd = C.STAGE_MOVE_SPD_MED
-		elseif cmd.cmd == 'fastpan' then
+		elseif cmd.verb == 'fastpan' then
 			s.loc.spd = C.STAGE_MOVE_SPD_FAST
 		end
 	end
@@ -816,7 +816,7 @@ function Scene(name,
 			for i = 1, #cmds do
 				local c = cmds[i]
 				s.handleCommand(c)
-				local x = "" .. s.t .. " " .. c.name .. " " .. c.cmd
+				local x = "" .. s.t .. " " .. c.name .. " " .. c.verb
 				G.debug = x
 			end
 		end

@@ -6,7 +6,7 @@ function Command(cmdStr)
 	local s = {
 		tic = parts[1],
 		name = parts[2],
-		cmd = parts[3],
+		verb = parts[3],
 		params = {}
 	}
 	for i = 4, #parts do
