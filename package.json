@@ -1,0 +1,12 @@
+{
+  "name": "omni",
+  "version": "1.0.0",
+  "description": "a tool for doing tic-80 things",
+  "main": "scripts/package.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node scripts/package.js"
+  },
+  "author": "",
+  "license": "ISC"
+}
