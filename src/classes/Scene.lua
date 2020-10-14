@@ -11,6 +11,7 @@ function Scene(name,
 		npcs = npcs,
 		tics = {},
 		tags = {},
+		paramTags = {},
 		lines = nil,
 		loc = Loc(),
 		map = nil,
@@ -73,8 +74,11 @@ function Scene(name,
 			--build up lib of tic cmds
 			local cmd = Command(cmdLine)
 			if cmd.verb == "tag" then
-				--do definition
+				--define tag
 				s.handleTagCommand(cmd)
+			elseif cmd.verb == "place" then
+				--define param tags for a location
+				s.addParamTag(cmd.name, cmd.params)
 			else
 				s.placeCmdInTics(cmd)
 			end
@@ -87,6 +91,19 @@ function Scene(name,
 		s.tags[cmd.name] = s.parseTic(t)
 	end
 
+	function s.addParamTag(key, params)
+		--set paramsTag
+		s.paramTags[key] = params
+	end
+
+	function s.getTaggedParams(key)
+		if s.paramTags[key] then
+			return s.paramTags[key]
+		else 
+			return nil 
+		end
+	end 
+
 	function s.getNpcOrNpcs(name)
 		if string.find(name, ',') then
 			local npcs = {}
@@ -97,7 +114,7 @@ function Scene(name,
 			return npcs
 		else
 			local npc = s.npcs[name]
-			if not npc then
+			if not npc then 
 				error("missing NPC " .. name)
 			end
 			return npc
@@ -125,11 +142,10 @@ function Scene(name,
 		if param == nil then return false end
 		if string.find(param, "+") or string.find(param, "-") then
 			return true
-		end
-		return false
+		end return false
 	end
 
-	function s.getMoveXY(params, loc)
+	function s.getCoordsFromLocation(params, loc)
 		local p = params
 		local x = 0
 		local y = 0
@@ -145,7 +161,7 @@ function Scene(name,
 				x = tonumber(p[1])
 			end
 			if s.isRelativeCoord(p[2]) then
-				y = y + tonumber(p[2])
+				y = y + tonumber(p[2]) 
 			else
 				y = tonumber(p[2])
 			end
@@ -157,12 +173,43 @@ function Scene(name,
 				x = npc2Loc.x
 				y = npc2Loc.y
 			else
-				local to = s.getMoveXY({p[2], p[3]}, npc2Loc)
+				local to = s.getCoordsFromLocation({p[2], p[3]}, npc2Loc)
 				x = to.x
 				y = to.y
 			end
 		end
 		return {x = x, y = y}
+	end
+
+	function s.getCoordsFromTag(tagParams) 
+		if #tagParams == 2 then
+			return {x = tonumber(tagParams[1]), y = tonumber(tagParams[2])}
+		elseif #tagParams > 2 then
+			-- relative to other tag params
+			local otherTagParams = s.getTaggedParams(tagParams[1])
+			return s.getCoordsFromLocation(
+				{tagParams[2], tagParams[3]},
+				s.getCoordsFromTag(otherTagParams))
+		else
+			trace('Error: 0 or 1 params for location tag!')
+		end
+	end
+
+	function s.getMoveXY(params, fromLocation)
+		local tagParams = s.getTaggedParams(params[1])
+
+		local to
+		-- use tagged location if present
+		if tagParams then
+			to = s.getCoordsFromTag(tagParams)
+			if #params >= 3 then -- relative to tagged location
+				to = s.getCoordsFromLocation({params[2], params[3]}, to)
+			end
+		else
+			-- get non-tagged location
+			to = s.getCoordsFromLocation(params, fromLocation)
+		end
+		return to
 	end
 
 	function s.handleMoveCommand(npc, cmd)
@@ -171,7 +218,7 @@ function Scene(name,
 		if cmd.verb == "to" then
 			npc.loc.x = tonumber(to.x)
 			npc.loc.y = tonumber(to.y)
-			npc.loc.dest = nil
+			npc.loc.dest = nil 
 		elseif cmd.verb == "walk" then
 			npc.loc.setDest(to.x, to.y)
 			npc.walk()
@@ -238,10 +285,12 @@ function Scene(name,
 
 	function s.handleStageCommand(cmd)
 		local to = s.getMoveXY(cmd.params, s.loc)
-		if not s.isRelativeCoord(cmd.params[1]) then
+
+		-- move focus to the center of the screen if not using coords relative to current stage position
+		if not (#cmd.params == 2 and s.isRelativeCoord(cmd.params[1])) then
 			to.x = to.x - 110
 		end
-		if not s.isRelativeCoord(cmd.params[2]) then
+		if not (#cmd.params == 2 and s.isRelativeCoord(cmd.params[2])) then
 			to.y = to.y - 60
 		end
 

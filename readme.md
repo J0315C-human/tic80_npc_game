@@ -33,7 +33,9 @@ Locations can be specified in these ways:
 - a coordinate with the Y relative to the NPC's current position: `2 bob run 0 -30`
 - both coordinates relative: `1 bob walk -50 +0`
 - the location of another NPC, given by name. For bob to walk to sue's position: `1 bob walk sue`
-- a coordinate relative to another NPC's location: `1 bob walk sue +0 +30` 
+- a coordinate relative to another NPC's location: `1 bob walk sue +0 +30`
+- name of a tagged location: `0 bob run stage_left`
+- relative to a tagged location: `0 bob run stage_left +30 +5` (see location tagging below)
 
 ### NPC Verbs
 
@@ -61,6 +63,16 @@ To give a name to a frame number, use this syntax (with the hyphen):
 The tag time can be in any of the time formats above. This makes it easy to "slide" timeline events back and forth in groups.
 
 Note that a time tag should be introduced before it is used in the script, so you might want to leave them all at the top.
+
+### Location tagging:
+
+To save a location as a tag, use this syntax:
+
+```- <tagname> place <location>```
+
+The location can be absolute or relative to another location tag.
+
+Note that these should also be placed before they are used in the script.
 
 ### Stage commands:
 

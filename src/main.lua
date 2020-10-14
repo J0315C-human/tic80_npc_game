@@ -1,5 +1,5 @@
 
-local testScript =[[
+local testScript0 =[[
 - a tag 240
 - b tag a+650
 - c tag b+720
@@ -7,12 +7,14 @@ local testScript =[[
 - e tag d+600
 - f tag e+250 
 - ef tag f-100
+- center_stage place 40 80
+- dot_start place center_stage +90 +0
 
 0 roy to -10 80
 0 dot to 240 60
 0 cat to 240 80
-0 roy walk +50 80
-0 dot walk 130 80
+0 roy walk center_stage
+0 dot walk dot_start
 
 0 - to roy
 50 - pan +30 +0
@@ -100,6 +102,39 @@ f+50 dot say THE END
 f+80 cat say THE END
 ]]
 
+local testScript1 = [[
+- start tag 0
+- action tag start+60
+- action2 tag action+100
+- action3 tag action2+100
+- action4 tag action3+200
+
+- spotA place 30 30
+- spotA2 place spotA +30 +0
+- spotA3 place spotA2 +0 +30
+- spotB place 140 80
+- spotB2 place spotB -30 +0 
+- spotB3 place spotB2 +0 -30
+
+start cat to spotA
+start roy to spotB
+
+action cat walk spotA2
+action roy walk spotB2
+
+action2 cat walk spotA3
+action2 roy walk spotB3
+
+action3 cat walk spotA3 +10 +10
+action3 roy walk spotB3 -40 +30
+
+action4 cat walk spotA3 -10 -10
+action4 roy walk spotB3 +40 -30
+
+action4+200 cat walk spotA3
+action4+200 roy walk spotB3
+]]
+
 local npcs={
 	bob = makeNpc(0),
 	ted = makeNpc(32,2),
@@ -114,7 +149,7 @@ local npcs={
 local s1 =
 	Scene('A Very Special Episode',
 	{roy=npcs.roy,cat=npcs.cat,dot=npcs.dot},
-	testScript,
+	testScript1,
 	{x=15, y=-3}
 )
 
@@ -135,7 +170,7 @@ function UPDATE()
 	end
 
 	G.t = G.t + 1
-end
+end 
 
 function TIC()
 	UPDATE()
