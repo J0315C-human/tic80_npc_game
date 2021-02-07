@@ -2,6 +2,11 @@ const { memory } = require('console');
 const fs = require('fs');
 const { sep } = require('path');
 
+require('dotenv').config({});
+
+// where to copy the output build
+const CART_OUT_PATH = process.env.CART_OUT_PATH;
+
 const SRC = './src';
 const CLASSES = `${SRC}/classes`;
 const UTILS = `${SRC}/utils`;
@@ -65,6 +70,9 @@ function cacheTic80Memory () {
 function writeOutputFile () {
   const memoryStuff = fs.readFileSync(OUTPUTMEMCACHE);
   fs.writeFileSync(OUTPUTFILE, output + memoryStuff);
+  if (CART_OUT_PATH){
+    fs.writeFileSync(CART_OUT_PATH, output + memoryStuff);
+  }
 }
 
 
