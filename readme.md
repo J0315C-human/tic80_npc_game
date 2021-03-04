@@ -17,7 +17,7 @@ Commands have this format:
 
 `<name>` is a name of an NPC present in this Scene
 
-`<command>` an NPC verb specified below
+`<verb>` an NPC verb specified below
 
 `<param list>` can be variable in length and type:
 - empty (i.e. the command ends with the verb)
